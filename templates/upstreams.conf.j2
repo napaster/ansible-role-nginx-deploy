@@ -1,0 +1,18 @@
+{#- Upstreams for vhost {{ item.server_name }} -- managed by nginx-deploy. -#}
+{#- One file per vhost (conf.d/upstreams/<server_name>.conf) so removing the -#}
+{#- vhost removes its upstreams too (declarative cleanup). -#}
+{{ '# ' + ansible_managed }}
+{% for up in item.upstreams | default([]) %}
+upstream {{ up.name }} {
+{% for srv in up.servers %}
+    server {{ srv }};
+{% endfor %}
+{% if up.ip_hash | default(false) %}
+    ip_hash;
+{% endif %}
+{% if up.keepalive is defined %}
+    keepalive {{ up.keepalive }};
+{% endif %}
+}
+
+{% endfor %}

@@ -1,0 +1,309 @@
+---
+- name: "nginx-deploy | Assert that ansible facts gathered successfully"
+  ansible.builtin.assert:
+    that:
+      - "hostvars[inventory_hostname]['ansible_facts']['service_mgr'] is
+        defined"
+    fail_msg: "'ansible_facts' not found. Please enable facts gathering"
+    quiet: "true"
+- name: "nginx-deploy | Assert that system manager is systemd"
+  ansible.builtin.assert:
+    that:
+      - "hostvars[inventory_hostname]['ansible_facts']['service_mgr'] ==
+        'systemd'"
+    fail_msg: "System manager is not systemd"
+    quiet: "true"
+- name: "nginx-deploy | Add the OS specific variables"
+  ansible.builtin.include_vars:
+    file: "{{ hostvars[inventory_hostname]['ansible_facts']['os_family'] +
+      '.yml' }}"
+
+- name: "nginx-deploy | Deploy nginx"
+  when:
+    - "hostvars[inventory_hostname]['nginx'] is defined"
+    - "hostvars[inventory_hostname]['nginx'] not in ['', [], '[]', None]"
+  block:
+    - name: "nginx-deploy | Resolve package_state from the nginx block"
+      ansible.builtin.set_fact:
+        nginx_package_state: "{{ hostvars[inventory_hostname]['nginx'] |
+          community.general.json_query('[].package_state | [0]')
+          | default('present', true) }}"
+    - name: "nginx-deploy | Assert that package_state is a valid value"
+      ansible.builtin.assert:
+        that:
+          - "lookup('ansible.builtin.vars', 'nginx_package_state') in
+            ['present', 'latest']"
+        fail_msg: "{{ 'package_state must be `present` or `latest`,
+          current is: ' + (nginx_package_state | string) }}"
+        quiet: "true"
+
+    - name: "nginx-deploy | Install nginx package"
+      ansible.builtin.package:
+        name: "{{ hostvars[inventory_hostname]['nginx_package'] }}"
+        state: "{{ nginx_package_state }}"
+
+    - name: "nginx-deploy | Ensure config directories exist"
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: "directory"
+        owner: "root"
+        group: "root"
+        mode: "0755"
+      loop:
+        - "{{ nginx_conf_dir }}/conf.d"
+        - "{{ nginx_conf_dir }}/conf.d/vhosts"
+        - "{{ nginx_conf_dir }}/conf.d/upstreams"
+        - "{{ nginx_conf_dir }}/conf.d/locations"
+
+    # No per-file `validate: nginx -t -c %s`: it tests a temp file in /tmp where
+    # relative includes (mime.types, conf.d/*) resolve to the wrong dir and fail.
+    # The "reload nginx" handler runs `nginx -t` on the real installed tree and
+    # gates the reload, which is the correct full-config validation.
+    - name: "nginx-deploy | Deploy main nginx.conf"
+      ansible.builtin.template:
+        src: "nginx.conf.j2"
+        dest: "{{ nginx_conf_dir }}/nginx.conf"
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      notify:
+        - "reload nginx"
+
+    - name: "nginx-deploy | Deploy static conf.d snippets"
+      ansible.builtin.copy:
+        src: "conf.d/{{ item }}"
+        dest: "{{ nginx_conf_dir }}/conf.d/{{ item }}"
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      loop:
+        - "443.conf"
+        - "80.conf"
+        - "locations/50x.conf"
+        - "locations/main.conf"
+        - "locations/policy.conf"
+        - "locations/php.conf"
+      notify:
+        - "reload nginx"
+
+    - name: "nginx-deploy | Deploy base proxy headers (conf.d/proxy_headers.conf)"
+      ansible.builtin.template:
+        src: "proxy_headers.conf.j2"
+        dest: "{{ nginx_conf_dir }}/conf.d/proxy_headers.conf"
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      notify:
+        - "reload nginx"
+
+    - name: "nginx-deploy | Deploy templated conf.d/private.conf (allow-list)"
+      ansible.builtin.template:
+        src: "private.conf.j2"
+        dest: "{{ nginx_conf_dir }}/conf.d/private.conf"
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      notify:
+        - "reload nginx"
+
+    - name: "nginx-deploy | Deploy host-tunable conf.d snippets (resolver/methods/php)"
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "{{ nginx_conf_dir }}/conf.d/{{ item }}"
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      loop:
+        - "defaults.conf"
+        - "header_checks.conf"
+        - "php_insert.conf"
+      notify:
+        - "reload nginx"
+
+    # passlib's crypt-based schemes break on Python 3.13+ (crypt module removed),
+    # so manage htpasswd via openssl apr1 instead. Idempotent: reuse the stored
+    # salt to recompute and compare, only rewriting when the password changed.
+    - name: "nginx-deploy | Manage basic-auth htpasswd entries (openssl apr1)"
+      ansible.builtin.shell:
+        executable: "/bin/bash"
+        cmd: |
+          set -euo pipefail
+          f={{ item.0.path | quote }}
+          u={{ item.1.name | quote }}
+          p={{ item.1.password | quote }}
+          cur=$(grep "^${u}:" "$f" 2>/dev/null | head -1 | cut -d: -f2- || true)
+          if [ -n "$cur" ]; then
+            salt=$(printf '%s' "$cur" | cut -d'$' -f3)
+            calc=$(printf '%s' "$p" | openssl passwd -apr1 -salt "$salt" -stdin)
+            if [ "$calc" = "$cur" ]; then echo UNCHANGED; exit 0; fi
+          fi
+          new=$(printf '%s' "$p" | openssl passwd -apr1 -stdin)
+          umask 027
+          touch "$f"
+          tmp=$(mktemp)
+          grep -v "^${u}:" "$f" 2>/dev/null > "$tmp" || true
+          printf '%s:%s\n' "$u" "$new" >> "$tmp"
+          cat "$tmp" > "$f"
+          rm -f "$tmp"
+          chown root:{{ nginx_group }} "$f"
+          chmod 0640 "$f"
+          echo CHANGED
+      loop: "{{ nginx_htpasswd | default([]) | subelements('users') }}"
+      loop_control:
+        label: "{{ item.0.path ~ ' :: ' ~ item.1.name }}"
+      register: "nginx_htpasswd_result"
+      changed_when: "'CHANGED' in nginx_htpasswd_result.stdout"
+      no_log: true
+
+    - name: "nginx-deploy | Deploy templated conf.d/tls.conf"
+      ansible.builtin.template:
+        src: "tls.conf.j2"
+        dest: "{{ nginx_conf_dir }}/conf.d/tls.conf"
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      notify:
+        - "reload nginx"
+
+    - name: "nginx-deploy | Deploy per-domain conf.d/<domain>_tls.conf"
+      ansible.builtin.template:
+        src: "domain_tls.conf.j2"
+        dest: "{{ nginx_conf_dir }}/conf.d/{{ item.domain }}_tls.conf"
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      loop: "{{ nginx_tls_certs | default([]) }}"
+      loop_control:
+        label: "{{ item.domain }}"
+      notify:
+        - "reload nginx"
+
+    - name: "nginx-deploy | Deploy conf.d/vhosts/noTLSreturn.conf"
+      ansible.builtin.template:
+        src: "noTLSreturn.conf.j2"
+        dest: "{{ nginx_conf_dir }}/conf.d/vhosts/noTLSreturn.conf"
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      notify:
+        - "reload nginx"
+
+    - name: "nginx-deploy | Deploy per-vhost upstreams (conf.d/upstreams/<server_name>.conf)"
+      ansible.builtin.template:
+        src: "upstreams.conf.j2"
+        dest: "{{ nginx_conf_dir }}/conf.d/upstreams/{{ item.server_name }}.conf"
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      loop: "{{ nginx_vhosts | default([]) }}"
+      loop_control:
+        label: "{{ item.server_name }}"
+      when:
+        - "item.upstreams is defined"
+        - "item.upstreams | length > 0"
+      notify:
+        - "reload nginx"
+
+    - name: "nginx-deploy | Deploy vhost configs"
+      ansible.builtin.template:
+        src: "vhost.conf.j2"
+        dest: "{{ nginx_conf_dir }}/conf.d/vhosts/{{ item.server_name }}.conf"
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      loop: "{{ nginx_vhosts | default([]) }}"
+      loop_control:
+        label: "{{ item.server_name }}"
+      notify:
+        - "reload nginx"
+
+    - name: "nginx-deploy | Build set of managed vhost filenames"
+      ansible.builtin.set_fact:
+        nginx_managed_vhosts: "{{ ['noTLSreturn.conf'] +
+          (nginx_vhosts | default([]) |
+          map(attribute='server_name') |
+          map('regex_replace', '$', '.conf') | list) }}"
+
+    - name: "nginx-deploy | Find vhost files currently on disk"
+      ansible.builtin.find:
+        paths: "{{ nginx_conf_dir }}/conf.d/vhosts"
+        patterns: "*.conf"
+      register: "nginx_vhosts_on_disk"
+
+    - name: "nginx-deploy | Remove orphan vhost files (declarative cleanup)"
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: "absent"
+      loop: "{{ nginx_vhosts_on_disk.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+      when:
+        - "item.path | basename not in nginx_managed_vhosts"
+      notify:
+        - "reload nginx"
+
+    - name: "nginx-deploy | Build set of managed upstream filenames"
+      ansible.builtin.set_fact:
+        nginx_managed_upstreams: "{{ nginx_vhosts | default([]) |
+          rejectattr('upstreams', 'undefined') |
+          map(attribute='server_name') |
+          map('regex_replace', '$', '.conf') | list }}"
+
+    - name: "nginx-deploy | Find upstream files currently on disk"
+      ansible.builtin.find:
+        paths: "{{ nginx_conf_dir }}/conf.d/upstreams"
+        patterns: "*.conf"
+      register: "nginx_upstreams_on_disk"
+
+    - name: "nginx-deploy | Remove orphan upstream files (declarative cleanup)"
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: "absent"
+      loop: "{{ nginx_upstreams_on_disk.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+      when:
+        - "item.path | basename not in nginx_managed_upstreams"
+      notify:
+        - "reload nginx"
+
+    - name: "nginx-deploy | Build set of managed per-domain TLS filenames"
+      ansible.builtin.set_fact:
+        nginx_managed_tls: "{{ nginx_tls_certs | default([]) |
+          map(attribute='domain') |
+          map('regex_replace', '$', '_tls.conf') | list }}"
+
+    - name: "nginx-deploy | Find per-domain TLS files currently on disk"
+      ansible.builtin.find:
+        paths: "{{ nginx_conf_dir }}/conf.d"
+        patterns: "*_tls.conf"
+        recurse: false
+      register: "nginx_tls_on_disk"
+
+    - name: "nginx-deploy | Remove orphan per-domain TLS files (declarative cleanup)"
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: "absent"
+      loop: "{{ nginx_tls_on_disk.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+      when:
+        - "item.path | basename not in nginx_managed_tls"
+      notify:
+        - "reload nginx"
+
+    - name: "nginx-deploy | Enable nginx service"
+      ansible.builtin.systemd:
+        name: "{{ hostvars[inventory_hostname]['nginx_service'] }}"
+        enabled: "yes"
+      when:
+        - "hostvars[inventory_hostname]['nginx'] |
+          community.general.json_query('[].enable | [0]') | bool"
+
+    - name: "nginx-deploy | Start nginx service"
+      ansible.builtin.systemd:
+        name: "{{ hostvars[inventory_hostname]['nginx_service'] }}"
+        state: "started"
+      when:
+        - "hostvars[inventory_hostname]['nginx'] |
+          community.general.json_query('[].started | [0]') | bool"

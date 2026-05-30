@@ -1,0 +1,15 @@
+{#- Port-80 -> 443 redirect server blocks -- managed by nginx-deploy. -#}
+{#- Driven by nginx_no_tls_redirects (list of server_name strings). -#}
+{{ '# ' + ansible_managed }}
+{% for sn in nginx_no_tls_redirects | default([]) %}
+server {
+  include                       conf.d/80.conf;
+  include                       conf.d/header_checks.conf;
+  include                       conf.d/locations/50x.conf;
+
+  access_log                    off;
+  server_name                   {{ sn }};
+  return                        301 https://$host$request_uri;
+}
+
+{% endfor %}

@@ -1,0 +1,85 @@
+---
+# Install/service control block (empty = role is inactive, like prometheus).
+nginx: []
+
+# Optional per-host override of conf.d/tls.conf. Keys left undefined fall back
+# to these defaults (extracted verbatim from the gw.mail-ok.ru capture).
+nginx_tls_params: {}
+
+nginx_tls_params_defaults:
+  ssl_dhparam: '/etc/ssl/certs/dhparam.pem'
+  ssl_stapling: 'off'
+  ssl_stapling_verify: 'off'
+  ssl_prefer_server_ciphers: 'off'
+  ssl_session_timeout: '1h'
+  ssl_session_cache: 'shared:MozSSL:10m'
+  ssl_session_tickets: 'off'
+  ssl_protocols: 'TLSv1.2 TLSv1.3'
+  ssl_ciphers: 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384'
+  hsts: 'max-age=31536000'
+  csp_report_only: "default-src https:; script-src https: 'unsafe-eval' 'unsafe-inline'; style-src https: 'unsafe-inline'; img-src https: data:; font-src https: data:; report-uri /csp-report"
+
+# conf.d/<domain>_tls.conf entries. Each domain maps to a cert dir at
+# /opt/certificates/<domain>/{fullchain,privkey,fullchain}.pem
+nginx_tls_certs: []
+
+# conf.d/vhosts/<server_name>.conf entries.
+nginx_vhosts: []
+
+# Clean base reverse-proxy header set. Rendered once to conf.d/proxy_headers.conf
+# and included by every proxy location that does not override it. Per-location
+# 'proxy_headers' replaces this set; 'proxy_headers_extra' appends to it.
+nginx_proxy_headers_default:
+  - { name: 'Host', value: '$host' }
+  - { name: 'X-Real-IP', value: '$remote_addr' }
+  - { name: 'X-Forwarded-For', value: '$proxy_add_x_forwarded_for' }
+  - { name: 'X-Forwarded-Proto', value: '$scheme' }
+  - { name: 'X-Forwarded-Host', value: '$host' }
+  - { name: 'X-Forwarded-Port', value: '$server_port' }
+
+# Additional headers appended only when a location sets websocket: true.
+nginx_proxy_headers_websocket:
+  - { name: 'Upgrade', value: '$http_upgrade' }
+  - { name: 'Connection', value: '"upgrade"' }
+
+# conf.d/private.conf allow-list. Layered: nginx_private_allow holds the shared
+# base (RFC1918 here; webfront group adds fabric-wide admin nets), and
+# nginx_private_allow_extra holds per-host additions. 'deny all;' is appended by
+# the template. Both lists are emitted in order.
+nginx_private_allow:
+  - '127.0.0.1'
+  - '192.168.0.0/16'
+  - '172.16.0.0/12'
+  - '10.0.0.0/8'
+  - '198.19.0.0/16'
+nginx_private_allow_extra: []
+
+# Port-80 -> 443 redirect server blocks (conf.d/vhosts/noTLSreturn.conf). Each
+# item is a server_name string (regex/wildcard allowed). Empty = no redirect.
+nginx_no_tls_redirects: []
+
+# Default oauth2-proxy listener used when a vhost enables oauth2_proxy without
+# specifying its own backend.
+nginx_oauth2_proxy_backend: '127.0.0.1:4180'
+
+# Main nginx.conf tunables. The rest of nginx.conf is identical fabric-wide and
+# stays hardcoded in the template; only these vary, so they are overridable
+# (group_vars/webfront or host_vars). Defaults match the historical values.
+nginx_worker_processes: 4
+nginx_worker_connections: 10240
+nginx_worker_rlimit_nofile: 16384
+nginx_client_max_body_size: '20M'
+
+# Per-snippet tunables for conf.d files that legitimately vary per host.
+# Defaults match the historical static snippets (behaviour-neutral).
+nginx_resolver: '127.0.0.1 8.8.8.8 ipv6=off'
+nginx_allowed_methods: 'GET|HEAD|POST|OPTIONS'
+nginx_php_fastcgi_pass: '127.0.0.1:9000'
+
+# Basic-auth files for vhosts using auth_basic. Each entry manages one file and
+# its users via openssl apr1; passwords MUST be vaulted. Empty = feature off.
+#   nginx_htpasswd:
+#     - path: '/etc/nginx/.htpasswd'
+#       users:
+#         - { name: 'admin', password: '{{ vault_nginx_htpasswd_admin }}' }
+nginx_htpasswd: []

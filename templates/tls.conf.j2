@@ -1,0 +1,14 @@
+{#- Effective TLS params: defaults overlaid by nginx_tls_params host override -#}
+{%- set tls = nginx_tls_params_defaults | combine(nginx_tls_params | default({})) -%}
+{{ '# ' + ansible_managed }}
+ssl_dhparam                 {{ tls.ssl_dhparam }};
+ssl_stapling                {{ tls.ssl_stapling }};
+ssl_stapling_verify         {{ tls.ssl_stapling_verify }};
+ssl_prefer_server_ciphers   {{ tls.ssl_prefer_server_ciphers }};
+ssl_session_timeout         {{ tls.ssl_session_timeout }};
+ssl_session_cache           {{ tls.ssl_session_cache }};
+ssl_session_tickets         {{ tls.ssl_session_tickets }};
+ssl_protocols               {{ tls.ssl_protocols }};
+ssl_ciphers                 {{ tls.ssl_ciphers }};
+add_header                  Strict-Transport-Security "{{ tls.hsts }}";
+add_header                  Content-Security-Policy-Report-Only "{{ tls.csp_report_only }}";

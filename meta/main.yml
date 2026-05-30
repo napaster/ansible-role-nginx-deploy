@@ -1,0 +1,24 @@
+---
+galaxy_info:
+  role_name: "nginx_deploy"
+  namespace: "none"
+  author: "Denis Pershev <dpershev@napaster.ru>"
+  description: "Install nginx and deploy a modular declarative reverse-proxy config"
+  company: "napaster"
+  license: "MIT"
+  min_ansible_version: "3.0.0"
+  platforms:
+    - name: "EL"
+      versions:
+        - 'all'
+    - name: "Debian"
+      versions:
+        - 'all'
+    - name: "ArchLinux"
+      versions:
+        - 'all'
+  galaxy_tags:
+    - 'nginx'
+    - 'proxy'
+    - 'web'
+dependencies: []

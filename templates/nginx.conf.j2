@@ -1,0 +1,53 @@
+{{ '# ' + ansible_managed }}
+user {{ nginx_user }};
+worker_processes {{ nginx_worker_processes }};
+worker_rlimit_nofile {{ nginx_worker_rlimit_nofile }};
+error_log stderr crit;
+
+#load_module /usr/lib/nginx/modules/ngx_http_js_module.so;
+#load_module /usr/lib/nginx/modules/ngx_stream_js_module.so;
+
+
+events {
+  worker_connections {{ nginx_worker_connections }};
+  multi_accept on;
+  use                            epoll;
+}
+
+http {
+  types_hash_max_size 2048;
+  types_hash_bucket_size 1024;
+  include mime.types;
+
+#  limit_req_zone $binary_remote_addr zone=one:10m rate=1r/s;
+#  limit_conn_zone $binary_remote_addr zone=addr:10m;
+
+  default_type application/octet-stream;
+  log_format main '$remote_addr $remote_user [$time_local] "$scheme[$server_protocol]" "$host" "$request" '
+                                     '$status $body_bytes_sent "$http_referer" "$http_user_agent" '
+                                     '"$http_x_forwarded_for" -> $upstream_response_time '
+                                     '$request_time';
+  access_log syslog:server=unix:/dev/log main;
+  sendfile on;
+  tcp_nopush on;
+  tcp_nodelay on;
+  reset_timedout_connection on;
+  server_tokens on;
+  postpone_output 1460;
+  gzip on;
+  gzip_proxied any;
+  gzip_comp_level 6;
+  gzip_min_length 1000;
+  gzip_types application/x-javascript text/css application/javascript text/javascript text/plain text/xml application/json application/vnd.ms-fontobject application/x-font-opentype application/x-font-truetype application/x-font-ttf application/xml font/eot font/opentype font/otf image/svg+xml image/vnd.microsoft.icon;
+  gzip_disable "msie6";
+  client_max_body_size {{ nginx_client_max_body_size }};
+  client_body_timeout 30s;
+  client_body_buffer_size 128k;
+  client_header_timeout 30s;
+  send_timeout 10s;
+  keepalive_timeout 30s 30s;
+  keepalive_requests 10000;
+
+  include conf.d/upstreams/*.conf;
+  include conf.d/vhosts/*.conf;
+}

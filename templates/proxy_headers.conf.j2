@@ -1,0 +1,6 @@
+{#- Base reverse-proxy headers -- managed by nginx-deploy. -#}
+{#- Included per-location via `include conf.d/proxy_headers.conf;`. -#}
+{{ '# ' + ansible_managed }}
+{% for h in nginx_proxy_headers_default %}
+proxy_set_header {{ h.name }} {{ h.value }};
+{% endfor %}

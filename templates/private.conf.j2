@@ -1,0 +1,10 @@
+{#- Access allow-list for internal-only locations -- managed by nginx-deploy. -#}
+{#- Shared base (nginx_private_allow) + per-host (nginx_private_allow_extra). -#}
+{{ '# ' + ansible_managed }}
+{% for a in nginx_private_allow %}
+allow {{ a }};
+{% endfor %}
+{% for a in nginx_private_allow_extra | default([]) %}
+allow {{ a }};
+{% endfor %}
+deny all;

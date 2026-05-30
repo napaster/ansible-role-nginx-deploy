@@ -1,0 +1,4 @@
+{{ '# ' + ansible_managed }}
+ssl_certificate                 /opt/certificates/{{ item.domain }}/fullchain.pem;
+ssl_certificate_key             /opt/certificates/{{ item.domain }}/privkey.pem;
+ssl_trusted_certificate		/opt/certificates/{{ item.domain }}/fullchain.pem;

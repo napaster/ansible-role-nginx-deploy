@@ -1,0 +1,4 @@
+{{ '# ' + ansible_managed }}
+if ( $request_method !~ ^({{ nginx_allowed_methods }})$ ) {
+  return			444;
+}

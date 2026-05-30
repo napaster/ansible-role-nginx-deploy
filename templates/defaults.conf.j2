@@ -1,0 +1,7 @@
+{{ '# ' + ansible_managed }}
+  index				index.php;
+  resolver			{{ nginx_resolver }};
+  charset			utf-8;
+  error_page			500 502 503 504 /50x.html;
+#  limit_req zone=one burst=5 nodelay;
+# limit_conn addr 10;

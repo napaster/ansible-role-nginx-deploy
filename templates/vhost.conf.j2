@@ -1,0 +1,130 @@
+{#- Reverse-proxy vhost rendered from one nginx_vhosts entry (item). -#}
+{#- Header strategy (see defaults/main.yml): a location with no override gets -#}
+{#- the shared base set via `include conf.d/proxy_headers.conf;`. -#}
+{#-   proxy_headers:       fully replaces the base for that location           -#}
+{#-   proxy_headers_extra: appended on top of the base                         -#}
+{#-   websocket: true:     adds the Upgrade/Connection pair                    -#}
+{%- macro proxy_headers(loc) -%}
+{%- set out = [] -%}
+{%- if loc.proxy_headers is defined -%}
+{%- for h in loc.proxy_headers -%}
+{{- out.append('        proxy_set_header ' ~ h.name ~ ' ' ~ h.value ~ ';') or '' -}}
+{%- endfor -%}
+{%- else -%}
+{{- out.append('        include conf.d/proxy_headers.conf;') or '' -}}
+{%- for h in loc.proxy_headers_extra | default([]) -%}
+{{- out.append('        proxy_set_header ' ~ h.name ~ ' ' ~ h.value ~ ';') or '' -}}
+{%- endfor -%}
+{%- endif -%}
+{%- if loc.websocket | default(false) -%}
+{{- out.append('        proxy_set_header Upgrade ' ~ nginx_proxy_headers_websocket[0].value ~ ';') or '' -}}
+{{- out.append('        proxy_set_header Connection ' ~ nginx_proxy_headers_websocket[1].value ~ ';') or '' -}}
+{%- endif -%}
+{{ out | join('\n') }}
+{%- endmacro -%}
+{#- Standard oauth2-proxy service endpoints (sign-in/callback + internal auth). -#}
+{%- macro oauth2_locations(oauth) %}
+    location /oauth2/ {
+        proxy_pass       http://{{ oauth.backend | default(nginx_oauth2_proxy_backend) }};
+        proxy_set_header Host                    $host;
+        proxy_set_header X-Real-IP               $remote_addr;
+        proxy_set_header X-Auth-Request-Redirect {{ oauth.redirect | default('$scheme://$host$request_uri') }};
+    }
+
+    location = /oauth2/auth {
+        proxy_pass       http://{{ oauth.backend | default(nginx_oauth2_proxy_backend) }};
+        proxy_set_header Host             $host;
+        proxy_set_header X-Real-IP        $remote_addr;
+        proxy_set_header X-Forwarded-Uri  $request_uri;
+        proxy_set_header Content-Length   "";
+        proxy_pass_request_body           off;
+    }
+{%- endmacro -%}
+{#- Upstreams live in conf.d/upstreams/<server_name>.conf (see upstreams.conf.j2). -#}
+{{ '# ' + ansible_managed }}
+server {
+    include           conf.d/443.conf;
+    include           conf.d/tls.conf;
+    include           conf.d/{{ item.tls_domain }}_tls.conf;
+{% if item.header_checks | default(false) %}
+    include           conf.d/header_checks.conf;
+{% endif %}
+{% for inc in item.includes | default([]) %}
+    include           conf.d/locations/{{ inc }}.conf;
+{% endfor %}
+{% if item.include_private | default(false) %}
+    include           conf.d/private.conf;
+{% endif %}
+
+    server_name       {{ item.server_name }};
+
+    access_log {{ item.access_log | default('/var/log/nginx/' ~ item.server_name ~ '-access.log') }};
+    error_log {{ item.error_log | default('/var/log/nginx/' ~ item.server_name ~ '-error.log') }};
+
+{% if item.root is defined %}
+    root               {{ item.root }};
+
+{% endif %}
+{% if item.autoindex | default(false) %}
+    autoindex on;
+    autoindex_exact_size on;
+    autoindex_localtime on;
+
+{% endif %}
+{% if item.client_max_body_size is defined %}
+    client_max_body_size {{ item.client_max_body_size }};
+{% endif %}
+{% if item.client_body_buffer_size is defined %}
+    client_body_buffer_size {{ item.client_body_buffer_size }};
+{% endif %}
+
+{% if item.proxy_timeouts is defined %}
+    proxy_connect_timeout {{ item.proxy_timeouts.connect }};
+    proxy_send_timeout {{ item.proxy_timeouts.send }};
+    proxy_read_timeout {{ item.proxy_timeouts.read }};
+    send_timeout {{ item.proxy_timeouts.send }};
+
+{% endif %}
+{% if item.proxy_buffering is defined %}
+    proxy_buffering {{ item.proxy_buffering }};
+{% endif %}
+{% if item.proxy_request_buffering is defined %}
+    proxy_request_buffering {{ item.proxy_request_buffering }};
+{% endif %}
+{% for line in item.extra | default([]) %}
+    {{ line }}
+{% endfor %}
+{% if item.oauth2_proxy is defined %}
+{{ oauth2_locations(item.oauth2_proxy) }}
+{% endif %}
+{% for loc in item.locations | default([]) %}
+
+    location {{ loc.path }} {
+{% if loc.allow is defined %}
+        allow {{ loc.allow }};
+
+{% endif %}
+{% if loc.oauth2_protect | default(false) %}
+        auth_request /oauth2/auth;
+        error_page 401 ={{ item.oauth2_proxy.error_code | default('403') }} /oauth2/sign_in;
+        auth_request_set $user   $upstream_http_x_auth_request_user;
+        auth_request_set $email  $upstream_http_x_auth_request_email;
+        proxy_set_header X-User  $user;
+        proxy_set_header X-Email $email;
+
+{% endif %}
+        proxy_pass {{ loc.proxy_pass }};
+        proxy_http_version 1.1;
+{{ proxy_headers(loc) }}
+{% if loc.timeouts is defined %}
+
+        proxy_connect_timeout {{ loc.timeouts.connect }};
+        proxy_send_timeout {{ loc.timeouts.send }};
+        proxy_read_timeout {{ loc.timeouts.read }};
+{% endif %}
+{% for line in loc.extra | default([]) %}
+        {{ line }}
+{% endfor %}
+    }
+{% endfor %}
+}
