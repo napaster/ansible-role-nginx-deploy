@@ -114,3 +114,11 @@ nginx_htpasswd: []
 #     udp: false                            # OPT, default false (TCP). True
 #                                           # appends `udp` to every `listen`.
 nginx_stream_servers: []
+
+# Optional path to the `ngx_stream_module.so` dynamic module. Set when the
+# distro's nginx package ships `stream` as a separate dynamic module instead
+# of compiling it in. Example values:
+#   '/usr/lib/nginx/modules/ngx_stream_module.so'   # Arch nginx-mod-stream
+#   '/usr/lib/nginx/modules/ngx_stream_module.so'   # Debian/Ubuntu nginx-mod-stream
+# Empty string = no `load_module` line emitted (stream is built-in or unused).
+nginx_stream_load_module_path: ''
