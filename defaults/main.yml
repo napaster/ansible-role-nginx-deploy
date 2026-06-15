@@ -24,6 +24,14 @@ nginx_tls_params_defaults:
 nginx_tls_certs: []
 
 # conf.d/vhosts/<server_name>.conf entries.
+#
+# Per-item `listen:` (scalar OR list of strings) overrides the default
+# `listen 443 ssl;` (from the shared conf.d/443.conf snippet) with explicit
+# directives. Each value is emitted verbatim. Examples:
+#   listen: '38443 ssl'                                    # custom port
+#   listen: '87.103.250.67:38443 ssl'                      # per-IP bind
+#   listen: ['87.103.250.67:443 ssl', '37.192.247.206:443 ssl']
+# Omit `listen:` to keep the default `:443` listener.
 nginx_vhosts: []
 
 # Clean base reverse-proxy header set. Rendered once to conf.d/proxy_headers.conf
