@@ -83,3 +83,34 @@ nginx_php_fastcgi_pass: '127.0.0.1:9000'
 #       users:
 #         - { name: 'admin', password: '{{ vault_nginx_htpasswd_admin }}' }
 nginx_htpasswd: []
+
+# Optional `stream {}` (L4 TCP/UDP proxy) servers. Each entry renders
+# conf.d/stream/<name>.conf and is included from the top-level stream block.
+# Empty list = `stream {}` block omitted from nginx.conf entirely.
+#
+# Item schema:
+#   - name: 's1'                            # filename + upstream label
+#     listen: '9786'                        # single string OR list of strings.
+#                                           # Each goes verbatim into a `listen`
+#                                           # directive. Examples:
+#                                           #   '9786'
+#                                           #   '87.103.250.67:9786'
+#                                           #   '9786 ssl'
+#                                           #   ['87.103.250.67:443 ssl',
+#                                           #    '37.192.247.206:443 ssl']
+#     upstream: '192.168.1.5:9786'          # single string OR list of strings;
+#                                           # list enables nginx round-robin
+#                                           # across backends.
+#     tls_domain: 'k154.ru'                 # OPT: load cert from
+#                                           # /opt/certificates/<tls_domain>/.
+#                                           # Required when any `listen` has
+#                                           # ` ssl` token.
+#     proxy_timeout: '1h'                   # OPT, default '10m'.
+#     proxy_connect_timeout: '5s'           # OPT, default '5s'.
+#     proxy_socket_keepalive: true          # OPT, default true.
+#     allow: ['203.0.113.0/24']             # OPT: L4 IP allowlist. Empty list /
+#                                           # absent = open. Non-empty list ends
+#                                           # with implicit `deny all;`.
+#     udp: false                            # OPT, default false (TCP). True
+#                                           # appends `udp` to every `listen`.
+nginx_stream_servers: []
