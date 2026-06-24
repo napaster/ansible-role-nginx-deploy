@@ -292,6 +292,51 @@
       notify:
         - "reload nginx"
 
+    - name: "nginx-deploy | Ensure conf.d/stream directory exists"
+      ansible.builtin.file:
+        path: "{{ nginx_conf_dir }}/conf.d/stream"
+        state: "directory"
+        owner: "root"
+        group: "root"
+        mode: "0755"
+
+    - name: "nginx-deploy | Deploy per-server stream configs"
+      ansible.builtin.template:
+        src: "stream_server.conf.j2"
+        dest: "{{ nginx_conf_dir }}/conf.d/stream/{{ item.name }}.conf"
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      loop: "{{ nginx_stream_servers | default([]) }}"
+      loop_control:
+        label: "{{ item.name }}"
+      notify:
+        - "reload nginx"
+
+    - name: "nginx-deploy | Build set of managed stream filenames"
+      ansible.builtin.set_fact:
+        nginx_managed_stream: "{{ nginx_stream_servers | default([]) |
+          map(attribute='name') |
+          map('regex_replace', '$', '.conf') | list }}"
+
+    - name: "nginx-deploy | Find stream files currently on disk"
+      ansible.builtin.find:
+        paths: "{{ nginx_conf_dir }}/conf.d/stream"
+        patterns: "*.conf"
+      register: "nginx_stream_on_disk"
+
+    - name: "nginx-deploy | Remove orphan stream files (declarative cleanup)"
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: "absent"
+      loop: "{{ nginx_stream_on_disk.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+      when:
+        - "item.path | basename not in nginx_managed_stream"
+      notify:
+        - "reload nginx"
+
     - name: "nginx-deploy | Enable nginx service"
       ansible.builtin.systemd:
         name: "{{ hostvars[inventory_hostname]['nginx_service'] }}"
