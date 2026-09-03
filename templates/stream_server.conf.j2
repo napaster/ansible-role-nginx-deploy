@@ -1,0 +1,33 @@
+{{ '# ' + ansible_managed }}
+{# Normalise scalar/list inputs so the rest of the template stays simple. #}
+{% set listens = item.listen if (item.listen is iterable and item.listen is not string) else [item.listen] %}
+{% set backends = item.upstream if (item.upstream is iterable and item.upstream is not string) else [item.upstream] %}
+{% set udp_suffix = ' udp' if item.udp | default(false) else '' %}
+
+upstream {{ item.name }}_stream {
+{% for srv in backends %}
+  server {{ srv }};
+{% endfor %}
+}
+
+server {
+{% for l in listens %}
+  listen {{ l }}{{ udp_suffix }};
+{% endfor %}
+{% if item.tls_domain is defined %}
+  ssl_certificate     /opt/certificates/{{ item.tls_domain }}/fullchain.pem;
+  ssl_certificate_key /opt/certificates/{{ item.tls_domain }}/privkey.pem;
+{% endif %}
+{% for ip in item.allow | default([]) %}
+  allow {{ ip }};
+{% endfor %}
+{% if item.allow | default([]) %}
+  deny all;
+{% endif %}
+  proxy_pass {{ item.name }}_stream;
+  proxy_connect_timeout {{ item.proxy_connect_timeout | default('5s') }};
+  proxy_timeout {{ item.proxy_timeout | default('10m') }};
+{% if item.proxy_socket_keepalive | default(true) %}
+  proxy_socket_keepalive on;
+{% endif %}
+}

@@ -24,6 +24,14 @@ nginx_tls_params_defaults:
 nginx_tls_certs: []
 
 # conf.d/vhosts/<server_name>.conf entries.
+#
+# Per-item `listen:` (scalar OR list of strings) overrides the default
+# `listen 443 ssl;` (from the shared conf.d/443.conf snippet) with explicit
+# directives. Each value is emitted verbatim. Examples:
+#   listen: '38443 ssl'                                    # custom port
+#   listen: '87.103.250.67:38443 ssl'                      # per-IP bind
+#   listen: ['87.103.250.67:443 ssl', '37.192.247.206:443 ssl']
+# Omit `listen:` to keep the default `:443` listener.
 nginx_vhosts: []
 
 # Clean base reverse-proxy header set. Rendered once to conf.d/proxy_headers.conf
@@ -83,3 +91,47 @@ nginx_php_fastcgi_pass: '127.0.0.1:9000'
 #       users:
 #         - { name: 'admin', password: '{{ vault_nginx_htpasswd_admin }}' }
 nginx_htpasswd: []
+
+# Optional `stream {}` (L4 TCP/UDP proxy) servers. Each entry renders
+# conf.d/stream/<name>.conf and is included from the top-level stream block.
+# Empty list = `stream {}` block omitted from nginx.conf entirely.
+#
+# Item schema:
+#   - name: 's1'                            # filename + upstream label
+#     listen: '9786'                        # single string OR list of strings.
+#                                           # Each goes verbatim into a `listen`
+#                                           # directive. Examples:
+#                                           #   '9786'
+#                                           #   '87.103.250.67:9786'
+#                                           #   '9786 ssl'
+#                                           #   ['87.103.250.67:443 ssl',
+#                                           #    '37.192.247.206:443 ssl']
+#     upstream: '192.168.1.5:9786'          # single string OR list of strings;
+#                                           # list enables nginx round-robin
+#                                           # across backends.
+#     tls_domain: 'k154.ru'                 # OPT: load cert from
+#                                           # /opt/certificates/<tls_domain>/.
+#                                           # Required when any `listen` has
+#                                           # ` ssl` token.
+#     proxy_timeout: '1h'                   # OPT, default '10m'.
+#     proxy_connect_timeout: '5s'           # OPT, default '5s'.
+#     proxy_socket_keepalive: true          # OPT, default true.
+#     allow: ['203.0.113.0/24']             # OPT: L4 IP allowlist. Empty list /
+#                                           # absent = open. Non-empty list ends
+#                                           # with implicit `deny all;`.
+#     udp: false                            # OPT, default false (TCP). True
+#                                           # appends `udp` to every `listen`.
+nginx_stream_servers: []
+
+# Optional path to the `ngx_stream_module.so` dynamic module. Set when the
+# distro's nginx package ships `stream` as a separate dynamic module instead
+# of compiling it in. Example values:
+#   '/usr/lib/nginx/modules/ngx_stream_module.so'   # Arch nginx-mod-stream
+#   '/usr/lib/nginx/modules/ngx_stream_module.so'   # Debian/Ubuntu nginx-mod-stream
+# Empty string = no `load_module` line emitted (stream is built-in or unused).
+nginx_stream_load_module_path: ''
+
+# Raw directives injected into the http {} context, one list item per line.
+# For things that cannot live in a server{} block: limit_req_zone,
+# limit_conn_zone, map, geo, split_clients.
+nginx_http_extra: []

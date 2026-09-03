@@ -54,7 +54,24 @@ nginx: []                 # install/service control; empty = role inactive
 nginx_tls_params: {}       # optional per-host override of tls.conf
 nginx_tls_certs: []        # -> conf.d/<domain>_tls.conf
 nginx_vhosts: []           # -> conf.d/vhosts/<server_name>.conf
+nginx_http_extra: []       # raw directives injected into http {}
 ```
+
+### `nginx_http_extra`
+
+Directives that cannot live inside a `server {}` block — shared rate-limit and
+connection zones, `map`, `geo`, `split_clients`. Rendered verbatim into the
+`http {}` context of `nginx.conf`, one list item per line.
+
+```yaml
+nginx_http_extra:
+  - 'limit_req_zone $binary_remote_addr zone=api_ip:10m rate=300r/m;'
+  - 'limit_conn_zone $http_authorization zone=api_tok_conn:10m;'
+```
+
+Zones are global, so keep names unique across all vhosts on the host. The
+zones themselves do nothing until a vhost references them via `limit_req` /
+`limit_conn` (per-vhost `extra:` or a location).
 
 ### Install/service block
 

@@ -43,7 +43,18 @@
 {#- Upstreams live in conf.d/upstreams/<server_name>.conf (see upstreams.conf.j2). -#}
 {{ '# ' + ansible_managed }}
 server {
+{% if item.listen is defined %}
+{# Override the hard-coded `listen 443 ssl` from conf.d/443.conf when an item
+   carries its own `listen:` (scalar or list). Each value is emitted verbatim
+   into a `listen` directive — supports custom ports, per-IP binds and the
+   ` ssl` token. `conf.d/defaults.conf` is still included for tcp_nopush etc. -#}
+{% for l in (item.listen if (item.listen is iterable and item.listen is not string) else [item.listen]) %}
+    listen            {{ l }};
+{% endfor %}
+    include           conf.d/defaults.conf;
+{% else %}
     include           conf.d/443.conf;
+{% endif %}
     include           conf.d/tls.conf;
     include           conf.d/{{ item.tls_domain }}_tls.conf;
 {% if item.header_checks | default(false) %}
