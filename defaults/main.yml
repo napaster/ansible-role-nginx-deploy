@@ -130,3 +130,8 @@ nginx_stream_servers: []
 #   '/usr/lib/nginx/modules/ngx_stream_module.so'   # Debian/Ubuntu nginx-mod-stream
 # Empty string = no `load_module` line emitted (stream is built-in or unused).
 nginx_stream_load_module_path: ''
+
+# Raw directives injected into the http {} context, one list item per line.
+# For things that cannot live in a server{} block: limit_req_zone,
+# limit_conn_zone, map, geo, split_clients.
+nginx_http_extra: []

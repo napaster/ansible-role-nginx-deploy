@@ -25,6 +25,16 @@ http {
 #  limit_req_zone $binary_remote_addr zone=one:10m rate=1r/s;
 #  limit_conn_zone $binary_remote_addr zone=addr:10m;
 
+{% if nginx_http_extra | default([]) | length > 0 %}
+  # Raw http-context directives (nginx_http_extra). Needed for anything that
+  # cannot live inside a server{} block -- limit_req_zone / limit_conn_zone,
+  # map, geo, split_clients. Rendered verbatim, one list item per line.
+{% for line in nginx_http_extra %}
+  {{ line }}
+{% endfor %}
+
+{% endif %}
+
   default_type application/octet-stream;
   log_format main '$remote_addr $remote_user [$time_local] "$scheme[$server_protocol]" "$host" "$request" '
                                      '$status $body_bytes_sent "$http_referer" "$http_user_agent" '
