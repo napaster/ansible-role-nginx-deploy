@@ -32,6 +32,11 @@ nginx_tls_certs: []
 #   listen: '87.103.250.67:38443 ssl'                      # per-IP bind
 #   listen: ['87.103.250.67:443 ssl', '37.192.247.206:443 ssl']
 # Omit `listen:` to keep the default `:443` listener.
+#
+# `tls_domain:` is optional. When set, the vhost includes conf.d/tls.conf and
+# conf.d/<domain>_tls.conf. Omit it for plain-HTTP vhosts (a LAN-only status
+# page on its own `listen:`, say) so they do not pick up ssl_* directives and
+# an HSTS header they cannot use.
 nginx_vhosts: []
 
 # Clean base reverse-proxy header set. Rendered once to conf.d/proxy_headers.conf

@@ -97,10 +97,15 @@ nginx_tls_certs:
 
 ### Vhosts
 
+`tls_domain` is optional. Set it and the vhost includes `conf.d/tls.conf` plus
+`conf.d/<domain>_tls.conf`; omit it and neither is emitted, which is what a
+plain-HTTP vhost on its own `listen:` wants — otherwise it inherits `ssl_*`
+directives and an HSTS header it has no use for.
+
 ```yaml
 nginx_vhosts:
   - server_name: asterisk.mail-ok.ru
-    tls_domain: mail-ok.ru
+    tls_domain: mail-ok.ru           # optional; omit for a plain-HTTP vhost
     includes: [50x, main]            # locations/* snippets to include
     include_private: false           # optional: include conf.d/private.conf
     client_max_body_size: 1024M
