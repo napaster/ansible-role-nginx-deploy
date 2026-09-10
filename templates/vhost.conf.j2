@@ -55,8 +55,10 @@ server {
 {% else %}
     include           conf.d/443.conf;
 {% endif %}
+{% if item.tls_domain is defined %}
     include           conf.d/tls.conf;
     include           conf.d/{{ item.tls_domain }}_tls.conf;
+{% endif %}
 {% if item.header_checks | default(false) %}
     include           conf.d/header_checks.conf;
 {% endif %}
