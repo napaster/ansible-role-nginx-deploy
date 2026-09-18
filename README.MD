@@ -57,6 +57,12 @@ nginx_vhosts: []           # -> conf.d/vhosts/<server_name>.conf
 nginx_http_extra: []       # raw directives injected into http {}
 ```
 
+### `nginx_server_tokens`
+
+`server_tokens` for the http {} context. Default `'off'`: the `Server` header
+and built-in error pages carry no nginx version. Set `'on'` per host to restore
+the stock behaviour.
+
 ### `nginx_http_extra`
 
 Directives that cannot live inside a `server {}` block — shared rate-limit and

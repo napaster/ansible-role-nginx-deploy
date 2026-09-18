@@ -136,6 +136,11 @@ nginx_stream_servers: []
 # Empty string = no `load_module` line emitted (stream is built-in or unused).
 nginx_stream_load_module_path: ''
 
+# `server_tokens` in the http {} context. 'off' hides the nginx version from
+# the Server header and error pages (an external audit flagged the version
+# leak); 'on' restores the stock behaviour for hosts that need it.
+nginx_server_tokens: 'off'
+
 # Raw directives injected into the http {} context, one list item per line.
 # For things that cannot live in a server{} block: limit_req_zone,
 # limit_conn_zone, map, geo, split_clients.
